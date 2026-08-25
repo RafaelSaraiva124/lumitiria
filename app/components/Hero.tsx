@@ -442,8 +442,6 @@ export default function Hero() {
             }
           },
         });
-
-        ScrollTrigger.refresh();
       }, rootRef);
     })();
 
@@ -491,7 +489,7 @@ export default function Hero() {
               poster="/assets/hero-poster.jpg"
               muted
               playsInline
-              preload="auto"
+              preload="metadata"
               disablePictureInPicture
               disableRemotePlayback
               aria-hidden="true"
