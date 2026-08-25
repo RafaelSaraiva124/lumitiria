@@ -48,6 +48,10 @@ const CAROUSEL_MOVE_START = 0.70;
 const CAROUSEL_START_X = 22;
 const CAROUSEL_END_X = -72;
 
+const MOBILE_VIDEO_BREAKPOINT = 768;
+const DESKTOP_VIDEO_SRC = "/assets/hero.mp4";
+const MOBILE_VIDEO_SRC = "/assets/hero-mobile.mp4";
+
 function remap(
     value: number,
     start: number,
@@ -102,11 +106,22 @@ export default function Hero() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const videoReadyRef = useRef(false);
+  const targetTimeRef = useRef(0);
 
   const reducedMotion = useReducedMotion();
 
   useLayoutEffect(() => {
     if (reducedMotion) return;
+
+    const video = videoRef.current;
+
+    if (video) {
+      const isMobileViewport = window.matchMedia(
+          `(max-width: ${MOBILE_VIDEO_BREAKPOINT}px)`,
+      ).matches;
+
+      video.src = isMobileViewport ? MOBILE_VIDEO_SRC : DESKTOP_VIDEO_SRC;
+    }
 
     let cancelled = false;
 
@@ -132,31 +147,47 @@ export default function Hero() {
       gsap.registerPlugin(ScrollTrigger);
 
       ctx = gsap.context(() => {
-        const video = videoRef.current;
-
         if (!video) return;
 
         const SEEK_EPSILON = 0.05;
+
+        let pendingFrame: number | null = null;
 
         const logVideoEvent = (label: string) => {
           if (process.env.NODE_ENV === "production") return;
 
           console.log(`[Hero video] ${label}`, {
+            src: video.currentSrc,
             readyState: video.readyState,
             networkState: video.networkState,
             duration: video.duration,
           });
         };
 
-        const updateVideo = (progress: number) => {
-          if (!videoReadyRef.current) return;
-          if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+        const applyVideoTime = () => {
+          pendingFrame = null;
 
-          const target = progress * video.duration;
+          if (!videoReadyRef.current) return;
+
+          const target = targetTimeRef.current;
 
           if (Math.abs(video.currentTime - target) > SEEK_EPSILON) {
             video.currentTime = target;
           }
+        };
+
+        const scheduleVideoUpdate = () => {
+          if (pendingFrame !== null) return;
+
+          pendingFrame = requestAnimationFrame(applyVideoTime);
+        };
+
+        const updateVideo = (progress: number) => {
+          if (!videoReadyRef.current) return;
+          if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+
+          targetTimeRef.current = progress * video.duration;
+          scheduleVideoUpdate();
         };
 
         const markVideoReady = () => {
@@ -207,6 +238,11 @@ export default function Hero() {
           video.removeEventListener("loadeddata", handleLoadedData);
           video.removeEventListener("canplay", handleCanPlay);
           video.removeEventListener("error", handleVideoError);
+
+          if (pendingFrame !== null) {
+            cancelAnimationFrame(pendingFrame);
+            pendingFrame = null;
+          }
         };
 
         const hero = document.querySelector(
@@ -256,6 +292,28 @@ export default function Hero() {
           xPercent: CAROUSEL_START_X,
         });
 
+        const setHeroOpacity = gsap.quickSetter(hero, "opacity");
+        const setHeroY = gsap.quickSetter(hero, "y", "px");
+        const setHeroScale = gsap.quickSetter(hero, "scale");
+        const setHeroVisibility = gsap.quickSetter(hero, "visibility");
+
+        const setCarouselOpacity = gsap.quickSetter(carousel, "opacity");
+        const setCarouselY = gsap.quickSetter(carousel, "y", "px");
+        const setCarouselVisibility = gsap.quickSetter(carousel, "visibility");
+
+        const setCarouselLabelOpacity = gsap.quickSetter(
+            carouselLabel,
+            "opacity",
+        );
+
+        const setCarouselTrackX = gsap.quickSetter(carouselTrack, "xPercent");
+
+        const cardSetters = cards.map((card) => ({
+          opacity: gsap.quickSetter(card, "opacity"),
+          y: gsap.quickSetter(card, "y", "px"),
+          scale: gsap.quickSetter(card, "scale"),
+        }));
+
         ScrollTrigger.create({
           trigger: rootRef.current,
           start: "top top",
@@ -270,12 +328,10 @@ export default function Hero() {
             updateVideo(p);
 
             if (p < 0.35) {
-              gsap.set(hero, {
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                visibility: "visible",
-              });
+              setHeroOpacity(1);
+              setHeroY(0);
+              setHeroScale(1);
+              setHeroVisibility("visible");
             }
 
             if (
@@ -290,38 +346,30 @@ export default function Hero() {
                   ),
               );
 
-              gsap.set(hero, {
-                opacity: 1 - t,
-                y: -80 * t,
-                scale: 1 - 0.08 * t,
-                visibility: "visible",
-              });
+              setHeroOpacity(1 - t);
+              setHeroY(-80 * t);
+              setHeroScale(1 - 0.08 * t);
+              setHeroVisibility("visible");
             }
 
             if (p >= HERO_END) {
-              gsap.set(hero, {
-                opacity: 0,
-                y: -80,
-                scale: 0.92,
-                visibility: "hidden",
-              });
+              setHeroOpacity(0);
+              setHeroY(-80);
+              setHeroScale(0.92);
+              setHeroVisibility("hidden");
             }
 
             if (p < CAROUSEL_ENTER) {
-              gsap.set(carousel, {
-                opacity: 0,
-                y: 80,
-                visibility: "hidden",
-              });
+              setCarouselOpacity(0);
+              setCarouselY(80);
+              setCarouselVisibility("hidden");
 
-              gsap.set(carouselLabel, {
-                opacity: 0,
-              });
+              setCarouselLabelOpacity(0);
 
-              gsap.set(cards, {
-                opacity: 0,
-                y: 40,
-                scale: 0.96,
+              cardSetters.forEach((setter) => {
+                setter.opacity(0);
+                setter.y(40);
+                setter.scale(0.96);
               });
             }
 
@@ -337,17 +385,13 @@ export default function Hero() {
                   ),
               );
 
-              gsap.set(carousel, {
-                opacity: t,
-                y: 80 - 80 * t,
-                visibility: "visible",
-              });
+              setCarouselOpacity(t);
+              setCarouselY(80 - 80 * t);
+              setCarouselVisibility("visible");
 
-              gsap.set(carouselLabel, {
-                opacity: t,
-              });
+              setCarouselLabelOpacity(t);
 
-              cards.forEach((card, index) => {
+              cardSetters.forEach((setter, index) => {
                 const delay =
                     index * 0.08;
 
@@ -359,31 +403,23 @@ export default function Hero() {
                 const eased =
                     smoothstep(cardT);
 
-                gsap.set(card, {
-                  opacity: eased,
-                  y: 40 - 40 * eased,
-                  scale:
-                      0.96 +
-                      0.04 * eased,
-                });
+                setter.opacity(eased);
+                setter.y(40 - 40 * eased);
+                setter.scale(0.96 + 0.04 * eased);
               });
             }
 
             if (p >= CAROUSEL_FADE_END) {
-              gsap.set(carousel, {
-                opacity: 1,
-                y: 0,
-                visibility: "visible",
-              });
+              setCarouselOpacity(1);
+              setCarouselY(0);
+              setCarouselVisibility("visible");
 
-              gsap.set(carouselLabel, {
-                opacity: 1,
-              });
+              setCarouselLabelOpacity(1);
 
-              gsap.set(cards, {
-                opacity: 1,
-                y: 0,
-                scale: 1,
+              cardSetters.forEach((setter) => {
+                setter.opacity(1);
+                setter.y(0);
+                setter.scale(1);
               });
             }
 
@@ -398,21 +434,12 @@ export default function Hero() {
                   ),
               );
 
-              gsap.set(
-                  carouselTrack,
-                  {
-                    xPercent:
-                        CAROUSEL_START_X +
-                        (CAROUSEL_END_X - CAROUSEL_START_X) * t,
-                  },
+              setCarouselTrackX(
+                  CAROUSEL_START_X +
+                  (CAROUSEL_END_X - CAROUSEL_START_X) * t,
               );
             } else {
-              gsap.set(
-                  carouselTrack,
-                  {
-                    xPercent: CAROUSEL_START_X,
-                  },
-              );
+              setCarouselTrackX(CAROUSEL_START_X);
             }
           },
         });
@@ -465,14 +492,12 @@ export default function Hero() {
               poster="/assets/hero-poster.jpg"
               muted
               playsInline
-              preload="auto"
+              preload="metadata"
               disablePictureInPicture
               disableRemotePlayback
               aria-hidden="true"
               className="absolute inset-0 z-0 h-full w-full object-cover"
-          >
-            <source src="/assets/hero.mp4" type="video/mp4" />
-          </video>
+          />
 
           <div className="pointer-events-none absolute inset-0 z-[5] bg-black/25" />
 
