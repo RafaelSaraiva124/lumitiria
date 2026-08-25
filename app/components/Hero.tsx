@@ -196,7 +196,6 @@ export default function Hero() {
 
           videoReadyRef.current = true;
           updateVideo(progressRef.current);
-          ScrollTrigger.refresh();
         };
 
         const handleLoadedMetadata = () => {
@@ -492,7 +491,7 @@ export default function Hero() {
               poster="/assets/hero-poster.jpg"
               muted
               playsInline
-              preload="metadata"
+              preload="auto"
               disablePictureInPicture
               disableRemotePlayback
               aria-hidden="true"
