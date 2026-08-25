@@ -48,9 +48,24 @@ const CAROUSEL_MOVE_START = 0.70;
 const CAROUSEL_START_X = 22;
 const CAROUSEL_END_X = -72;
 
-const MOBILE_VIDEO_BREAKPOINT = 768;
-const DESKTOP_VIDEO_SRC = "/assets/hero.mp4";
-const MOBILE_VIDEO_SRC = "/assets/hero-mobile.mp4";
+const FRAME_COUNT = 199;
+const FRAME_WIDTH = 1536;
+const FRAME_HEIGHT = 1024;
+const FRAME_PRIORITY_COUNT = 30;
+const FRAME_PATH = "/hero-frames";
+
+function getFrameUrl(index: number) {
+  return `${FRAME_PATH}/${String(index).padStart(3, "0")}.webp`;
+}
+
+type DrawParams = {
+  cssWidth: number;
+  cssHeight: number;
+  sx: number;
+  sy: number;
+  sWidth: number;
+  sHeight: number;
+};
 
 function remap(
     value: number,
@@ -102,36 +117,224 @@ function useReducedMotion() {
 
 export default function Hero() {
   const rootRef = useRef<HTMLElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef(0);
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const videoReadyRef = useRef(false);
-  const targetTimeRef = useRef(0);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const framesRef = useRef<(HTMLImageElement | null)[]>([]);
+  const targetFrameRef = useRef(0);
+  const currentFrameRef = useRef(-1);
 
   const reducedMotion = useReducedMotion();
 
   useLayoutEffect(() => {
     if (reducedMotion) return;
 
-    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
 
-    if (video) {
-      const isMobileViewport = window.matchMedia(
-          `(max-width: ${MOBILE_VIDEO_BREAKPOINT}px)`,
-      ).matches;
+    if (!canvas || !container) return;
 
-      video.src = isMobileViewport ? MOBILE_VIDEO_SRC : DESKTOP_VIDEO_SRC;
-    }
+    framesRef.current = new Array(FRAME_COUNT).fill(null);
+    targetFrameRef.current = 0;
+    currentFrameRef.current = -1;
 
     let cancelled = false;
+    let ctx2d: CanvasRenderingContext2D | null = null;
+    let drawParams: DrawParams | null = null;
+    let canvasRevealed = false;
+    let pendingDrawFrame: number | null = null;
+    let pendingResizeFrame: number | null = null;
+
+    const loadingFrames = new Set<number>();
+
+    const logFrameEvent = (label: string, detail?: unknown) => {
+      if (process.env.NODE_ENV === "production") return;
+
+      console.log(`[Hero frames] ${label}`, detail ?? "");
+    };
+
+    const computeDrawParams = () => {
+      const cssWidth = container.clientWidth;
+      const cssHeight = container.clientHeight;
+
+      if (cssWidth <= 0 || cssHeight <= 0) return;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+      canvas.width = Math.round(cssWidth * dpr);
+      canvas.height = Math.round(cssHeight * dpr);
+
+      if (!ctx2d) {
+        ctx2d = canvas.getContext("2d");
+      }
+
+      ctx2d?.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const imageAspect = FRAME_WIDTH / FRAME_HEIGHT;
+      const containerAspect = cssWidth / cssHeight;
+
+      let sx: number;
+      let sy: number;
+      let sWidth: number;
+      let sHeight: number;
+
+      if (imageAspect > containerAspect) {
+        sHeight = FRAME_HEIGHT;
+        sWidth = FRAME_HEIGHT * containerAspect;
+        sx = (FRAME_WIDTH - sWidth) / 2;
+        sy = 0;
+      } else {
+        sWidth = FRAME_WIDTH;
+        sHeight = FRAME_WIDTH / containerAspect;
+        sx = 0;
+        sy = (FRAME_HEIGHT - sHeight) / 2;
+      }
+
+      drawParams = { cssWidth, cssHeight, sx, sy, sWidth, sHeight };
+    };
+
+    const drawFrame = (index: number) => {
+      const img = framesRef.current[index];
+
+      if (!ctx2d || !drawParams || !img) return;
+
+      ctx2d.clearRect(0, 0, drawParams.cssWidth, drawParams.cssHeight);
+      ctx2d.drawImage(
+          img,
+          drawParams.sx,
+          drawParams.sy,
+          drawParams.sWidth,
+          drawParams.sHeight,
+          0,
+          0,
+          drawParams.cssWidth,
+          drawParams.cssHeight,
+      );
+
+      currentFrameRef.current = index;
+
+      if (!canvasRevealed) {
+        canvasRevealed = true;
+        canvas.style.opacity = "1";
+      }
+    };
+
+    const redrawCurrent = () => {
+      drawFrame(targetFrameRef.current);
+    };
+
+    const scheduleDraw = () => {
+      if (pendingDrawFrame !== null) return;
+
+      pendingDrawFrame = requestAnimationFrame(() => {
+        pendingDrawFrame = null;
+
+        const target = targetFrameRef.current;
+
+        if (target === currentFrameRef.current) return;
+
+        drawFrame(target);
+      });
+    };
+
+    const loadFrame = (
+        index: number,
+        priority: "high" | "low",
+    ): Promise<void> => {
+      if (framesRef.current[index]) return Promise.resolve();
+      if (loadingFrames.has(index)) return Promise.resolve();
+
+      loadingFrames.add(index);
+
+      return new Promise((resolve) => {
+        const img = new window.Image();
+
+        img.decoding = "async";
+        img.fetchPriority = priority;
+
+        img.onload = () => {
+          framesRef.current[index] = img;
+          loadingFrames.delete(index);
+
+          if (index === targetFrameRef.current) {
+            redrawCurrent();
+          }
+
+          resolve();
+        };
+
+        img.onerror = () => {
+          loadingFrames.delete(index);
+          logFrameEvent("erro ao carregar frame", index);
+          resolve();
+        };
+
+        img.src = getFrameUrl(index);
+      });
+    };
+
+    const updateTargetFrame = (progress: number) => {
+      const frame = Math.round(clamp(progress) * (FRAME_COUNT - 1));
+
+      if (frame === targetFrameRef.current) return;
+
+      targetFrameRef.current = frame;
+
+      if (!framesRef.current[frame]) {
+        loadFrame(frame, "high");
+      }
+
+      scheduleDraw();
+    };
+
+    const scheduleResize = () => {
+      if (pendingResizeFrame !== null) return;
+
+      pendingResizeFrame = requestAnimationFrame(() => {
+        pendingResizeFrame = null;
+        computeDrawParams();
+        redrawCurrent();
+      });
+    };
+
+    const preloadFrames = async () => {
+      await loadFrame(0, "high");
+      if (cancelled) return;
+
+      redrawCurrent();
+
+      const priorityEnd = Math.min(FRAME_PRIORITY_COUNT, FRAME_COUNT);
+      const priorityLoads: Promise<void>[] = [];
+
+      for (let i = 1; i < priorityEnd; i++) {
+        priorityLoads.push(loadFrame(i, "high"));
+      }
+
+      await Promise.all(priorityLoads);
+      if (cancelled) return;
+
+      logFrameEvent("frames prioritários prontos", priorityEnd);
+
+      for (let i = priorityEnd; i < FRAME_COUNT; i++) {
+        if (cancelled) return;
+        await loadFrame(i, "low");
+      }
+
+      if (!cancelled) logFrameEvent("todos os frames carregados");
+    };
+
+    computeDrawParams();
+    preloadFrames();
+
+    window.addEventListener("resize", scheduleResize);
+    window.addEventListener("orientationchange", scheduleResize);
 
     let ctx:
         | {
       revert: () => void;
     }
         | undefined;
-
-    let cleanupVideo: (() => void) | undefined;
 
     (async () => {
       const [
@@ -147,103 +350,6 @@ export default function Hero() {
       gsap.registerPlugin(ScrollTrigger);
 
       ctx = gsap.context(() => {
-        if (!video) return;
-
-        const SEEK_EPSILON = 0.05;
-
-        let pendingFrame: number | null = null;
-
-        const logVideoEvent = (label: string) => {
-          if (process.env.NODE_ENV === "production") return;
-
-          console.log(`[Hero video] ${label}`, {
-            src: video.currentSrc,
-            readyState: video.readyState,
-            networkState: video.networkState,
-            duration: video.duration,
-          });
-        };
-
-        const applyVideoTime = () => {
-          pendingFrame = null;
-
-          if (!videoReadyRef.current) return;
-
-          const target = targetTimeRef.current;
-
-          if (Math.abs(video.currentTime - target) > SEEK_EPSILON) {
-            video.currentTime = target;
-          }
-        };
-
-        const scheduleVideoUpdate = () => {
-          if (pendingFrame !== null) return;
-
-          pendingFrame = requestAnimationFrame(applyVideoTime);
-        };
-
-        const updateVideo = (progress: number) => {
-          if (!videoReadyRef.current) return;
-          if (!Number.isFinite(video.duration) || video.duration <= 0) return;
-
-          targetTimeRef.current = progress * video.duration;
-          scheduleVideoUpdate();
-        };
-
-        const markVideoReady = () => {
-          if (videoReadyRef.current) return;
-          if (!Number.isFinite(video.duration) || video.duration <= 0) return;
-
-          videoReadyRef.current = true;
-          updateVideo(progressRef.current);
-        };
-
-        const handleLoadedMetadata = () => {
-          logVideoEvent("loadedmetadata");
-          markVideoReady();
-        };
-
-        const handleLoadedData = () => {
-          logVideoEvent("loadeddata");
-          markVideoReady();
-        };
-
-        const handleCanPlay = () => {
-          logVideoEvent("canplay");
-          markVideoReady();
-        };
-
-        const handleVideoError = () => {
-          if (process.env.NODE_ENV === "production") return;
-
-          console.error("[Hero video] erro ao carregar vídeo:", video.error);
-        };
-
-        video.addEventListener("loadedmetadata", handleLoadedMetadata);
-        video.addEventListener("loadeddata", handleLoadedData);
-        video.addEventListener("canplay", handleCanPlay);
-        video.addEventListener("error", handleVideoError);
-
-        if (
-            video.readyState >= 1 &&
-            Number.isFinite(video.duration) &&
-            video.duration > 0
-        ) {
-          markVideoReady();
-        }
-
-        cleanupVideo = () => {
-          video.removeEventListener("loadedmetadata", handleLoadedMetadata);
-          video.removeEventListener("loadeddata", handleLoadedData);
-          video.removeEventListener("canplay", handleCanPlay);
-          video.removeEventListener("error", handleVideoError);
-
-          if (pendingFrame !== null) {
-            cancelAnimationFrame(pendingFrame);
-            pendingFrame = null;
-          }
-        };
-
         const hero = document.querySelector(
             "#lumitiria-hero-copy",
         );
@@ -324,7 +430,7 @@ export default function Hero() {
 
             progressRef.current = p;
 
-            updateVideo(p);
+            updateTargetFrame(p);
 
             if (p < 0.35) {
               setHeroOpacity(1);
@@ -447,7 +553,18 @@ export default function Hero() {
 
     return () => {
       cancelled = true;
-      cleanupVideo?.();
+
+      window.removeEventListener("resize", scheduleResize);
+      window.removeEventListener("orientationchange", scheduleResize);
+
+      if (pendingDrawFrame !== null) {
+        cancelAnimationFrame(pendingDrawFrame);
+      }
+
+      if (pendingResizeFrame !== null) {
+        cancelAnimationFrame(pendingResizeFrame);
+      }
+
       ctx?.revert();
     };
   }, [reducedMotion]);
@@ -482,18 +599,25 @@ export default function Hero() {
           id="lumitiria-hero"
           className="relative h-[500vh] bg-black"
       >
-        <div className="sticky top-0 h-[100svh] overflow-hidden">
+        <div
+            ref={containerRef}
+            className="sticky top-0 h-[100svh] overflow-hidden"
+        >
 
-          <video
-              ref={videoRef}
-              poster="/assets/hero-poster.jpg"
-              muted
-              playsInline
-              preload="metadata"
-              disablePictureInPicture
-              disableRemotePlayback
+          <Image
+              src="/assets/hero-poster.webp"
+              alt=""
+              fill
+              priority
+              sizes="100vw"
               aria-hidden="true"
-              className="absolute inset-0 z-0 h-full w-full object-cover"
+              className="absolute inset-0 z-0 object-cover"
+          />
+
+          <canvas
+              ref={canvasRef}
+              aria-hidden="true"
+              className="absolute inset-0 z-[1] h-full w-full object-cover opacity-0 transition-opacity duration-500 ease-out"
           />
 
           <div className="pointer-events-none absolute inset-0 z-[5] bg-black/25" />
