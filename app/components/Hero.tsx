@@ -101,6 +101,7 @@ export default function Hero() {
   const progressRef = useRef(0);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoReadyRef = useRef(false);
 
   const reducedMotion = useReducedMotion();
 
@@ -114,6 +115,8 @@ export default function Hero() {
       revert: () => void;
     }
         | undefined;
+
+    let cleanupVideo: (() => void) | undefined;
 
     (async () => {
       const [
@@ -133,11 +136,78 @@ export default function Hero() {
 
         if (!video) return;
 
+        const SEEK_EPSILON = 0.05;
 
-        video.play()?.then(
-            () => video.pause(),
-            () => {},
-        );
+        const logVideoEvent = (label: string) => {
+          if (process.env.NODE_ENV === "production") return;
+
+          console.log(`[Hero video] ${label}`, {
+            readyState: video.readyState,
+            networkState: video.networkState,
+            duration: video.duration,
+          });
+        };
+
+        const updateVideo = (progress: number) => {
+          if (!videoReadyRef.current) return;
+          if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+
+          const target = progress * video.duration;
+
+          if (Math.abs(video.currentTime - target) > SEEK_EPSILON) {
+            video.currentTime = target;
+          }
+        };
+
+        const markVideoReady = () => {
+          if (videoReadyRef.current) return;
+          if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+
+          videoReadyRef.current = true;
+          updateVideo(progressRef.current);
+          ScrollTrigger.refresh();
+        };
+
+        const handleLoadedMetadata = () => {
+          logVideoEvent("loadedmetadata");
+          markVideoReady();
+        };
+
+        const handleLoadedData = () => {
+          logVideoEvent("loadeddata");
+          markVideoReady();
+        };
+
+        const handleCanPlay = () => {
+          logVideoEvent("canplay");
+          markVideoReady();
+        };
+
+        const handleVideoError = () => {
+          if (process.env.NODE_ENV === "production") return;
+
+          console.error("[Hero video] erro ao carregar vídeo:", video.error);
+        };
+
+        video.addEventListener("loadedmetadata", handleLoadedMetadata);
+        video.addEventListener("loadeddata", handleLoadedData);
+        video.addEventListener("canplay", handleCanPlay);
+        video.addEventListener("error", handleVideoError);
+
+        if (
+            video.readyState >= 1 &&
+            Number.isFinite(video.duration) &&
+            video.duration > 0
+        ) {
+          markVideoReady();
+        }
+
+        cleanupVideo = () => {
+          video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+          video.removeEventListener("loadeddata", handleLoadedData);
+          video.removeEventListener("canplay", handleCanPlay);
+          video.removeEventListener("error", handleVideoError);
+        };
 
         const hero = document.querySelector(
             "#lumitiria-hero-copy",
@@ -197,13 +267,7 @@ export default function Hero() {
 
             progressRef.current = p;
 
-            if (
-                video.readyState >= 2 &&
-                Number.isFinite(video.duration)
-            ) {
-              video.currentTime =
-                  p * video.duration;
-            }
+            updateVideo(p);
 
             if (p < 0.35) {
               gsap.set(hero, {
@@ -352,11 +416,14 @@ export default function Hero() {
             }
           },
         });
+
+        ScrollTrigger.refresh();
       }, rootRef);
     })();
 
     return () => {
       cancelled = true;
+      cleanupVideo?.();
       ctx?.revert();
     };
   }, [reducedMotion]);
@@ -395,7 +462,6 @@ export default function Hero() {
 
           <video
               ref={videoRef}
-              src="/assets/hero.mp4"
               poster="/assets/hero-poster.jpg"
               muted
               playsInline
@@ -404,7 +470,9 @@ export default function Hero() {
               disableRemotePlayback
               aria-hidden="true"
               className="absolute inset-0 z-0 h-full w-full object-cover"
-          />
+          >
+            <source src="/assets/hero.mp4" type="video/mp4" />
+          </video>
 
           <div className="pointer-events-none absolute inset-0 z-[5] bg-black/25" />
 
