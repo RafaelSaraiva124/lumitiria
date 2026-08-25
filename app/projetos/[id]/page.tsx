@@ -20,12 +20,22 @@ export async function generateMetadata({
   const project = getProjectById(id);
 
   if (!project) {
-    return { title: "Projeto não encontrado | Lumitiria" };
+    return { title: "Projeto não encontrado" };
   }
 
   return {
-    title: `${project.title} | Lumitiria`,
+    title: project.title,
     description: project.summary,
+    openGraph: {
+      title: `${project.title} | Lumitiria`,
+      description: project.summary,
+      images: [project.image],
+    },
+    twitter: {
+      title: `${project.title} | Lumitiria`,
+      description: project.summary,
+      images: [project.image],
+    },
   };
 }
 

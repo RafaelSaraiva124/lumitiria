@@ -133,6 +133,12 @@ export default function Hero() {
 
         if (!video) return;
 
+
+        video.play()?.then(
+            () => video.pause(),
+            () => {},
+        );
+
         const hero = document.querySelector(
             "#lumitiria-hero-copy",
         );
@@ -390,9 +396,13 @@ export default function Hero() {
           <video
               ref={videoRef}
               src="/assets/hero.mp4"
+              poster="/assets/hero-poster.jpg"
               muted
               playsInline
               preload="auto"
+              disablePictureInPicture
+              disableRemotePlayback
+              aria-hidden="true"
               className="absolute inset-0 z-0 h-full w-full object-cover"
           />
 

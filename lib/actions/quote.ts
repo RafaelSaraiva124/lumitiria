@@ -12,14 +12,39 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const GENERIC_ERROR_MESSAGE =
   "Não foi possível enviar o pedido. Tenta novamente mais tarde.";
 
+const MAX_LENGTHS = {
+  name: 120,
+  phone: 40,
+  message: 5000,
+};
+
+function sanitizeSingleLine(value: string, maxLength: number) {
+  const withoutControlChars = Array.from(value)
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      return code >= 0x20 && code !== 0x7f;
+    })
+    .join("");
+
+  return withoutControlChars.trim().slice(0, maxLength);
+}
+
 export async function sendQuoteRequest(
   _prevState: QuoteRequestState,
   formData: FormData
 ): Promise<QuoteRequestState> {
-  const name = String(formData.get("name") ?? "").trim();
+  const name = sanitizeSingleLine(
+    String(formData.get("name") ?? ""),
+    MAX_LENGTHS.name
+  );
   const email = String(formData.get("email") ?? "").trim();
-  const phone = String(formData.get("phone") ?? "").trim();
-  const message = String(formData.get("message") ?? "").trim();
+  const phone = sanitizeSingleLine(
+    String(formData.get("phone") ?? ""),
+    MAX_LENGTHS.phone
+  );
+  const message = String(formData.get("message") ?? "")
+    .trim()
+    .slice(0, MAX_LENGTHS.message);
 
   if (!name || !email || !message) {
     return { status: "error", message: "Preenche o nome, email e mensagem." };
