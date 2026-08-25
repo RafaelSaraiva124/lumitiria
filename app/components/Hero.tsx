@@ -33,19 +33,20 @@ const services = [
 |
 | 0.00 ─ 0.35  → Hero
 | 0.35 ─ 0.48  → Hero desaparece
-| 0.48 ─ 0.72  → Janela abre
-| 0.72 ─ 0.80  → Pausa depois da abertura
-| 0.80 ─ 0.86  → Cards entram
-| 0.86 ─ 1.00  → Carousel horizontal
+| 0.48 ─ 0.62  → Janela abre
+| 0.62 ─ 0.70  → Cards entram
+| 0.70 ─ 1.00  → Carousel horizontal
 |
 */
 
 const HERO_END = 0.48;
 
-const CAROUSEL_ENTER = 0.80;
-const CAROUSEL_FADE_END = 0.86;
+const CAROUSEL_ENTER = 0.62;
+const CAROUSEL_FADE_END = 0.70;
 
-const CAROUSEL_MOVE_START = 0.86;
+const CAROUSEL_MOVE_START = 0.70;
+const CAROUSEL_START_X = 22;
+const CAROUSEL_END_X = -72;
 
 function remap(
     value: number,
@@ -173,6 +174,10 @@ export default function Hero() {
           opacity: 0,
           y: 40,
           scale: 0.96,
+        });
+
+        gsap.set(carouselTrack, {
+          xPercent: CAROUSEL_START_X,
         });
 
         ScrollTrigger.create({
@@ -326,14 +331,16 @@ export default function Hero() {
               gsap.set(
                   carouselTrack,
                   {
-                    xPercent: -72 * t,
+                    xPercent:
+                        CAROUSEL_START_X +
+                        (CAROUSEL_END_X - CAROUSEL_START_X) * t,
                   },
               );
             } else {
               gsap.set(
                   carouselTrack,
                   {
-                    xPercent: 0,
+                    xPercent: CAROUSEL_START_X,
                   },
               );
             }
@@ -380,10 +387,6 @@ export default function Hero() {
       >
         <div className="sticky top-0 h-[100svh] overflow-hidden">
 
-          {/* ================================================= */}
-          {/* VIDEO                                             */}
-          {/* ================================================= */}
-
           <video
               ref={videoRef}
               src="/assets/hero.mp4"
@@ -393,15 +396,7 @@ export default function Hero() {
               className="absolute inset-0 z-0 h-full w-full object-cover"
           />
 
-          {/* ================================================= */}
-          {/* OVERLAY                                            */}
-          {/* ================================================= */}
-
           <div className="pointer-events-none absolute inset-0 z-[5] bg-black/25" />
-
-          {/* ================================================= */}
-          {/* HERO COPY                                          */}
-          {/* ================================================= */}
 
           <div
               id="lumitiria-hero-copy"
@@ -486,10 +481,6 @@ export default function Hero() {
             </div>
           </div>
 
-          {/* ================================================= */}
-          {/* SERVICES CAROUSEL                                 */}
-          {/* ================================================= */}
-
           <div
               id="lumitiria-carousel"
               className="
@@ -503,8 +494,6 @@ export default function Hero() {
           >
             <div className="w-full">
 
-              {/* LABEL */}
-
               <div
                   id="lumitiria-carousel-label"
                   className="mx-auto mb-6 w-full max-w-7xl px-6 md:px-12"
@@ -517,8 +506,6 @@ export default function Hero() {
                   Engenharia que ganha forma.
                 </h2>
               </div>
-
-              {/* TRACK */}
 
               <div className="overflow-visible">
                 <div
