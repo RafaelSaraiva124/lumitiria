@@ -612,6 +612,7 @@ export default function Hero() {
             ref={containerRef}
             className="sticky top-0 h-[100svh] overflow-hidden"
         >
+          <div className="relative h-full w-full">
 
           <Image
               src="/assets/hero-poster.webp"
@@ -743,12 +744,14 @@ export default function Hero() {
           <div
               id="lumitiria-carousel"
               className="
+            invisible
             absolute
             inset-0
             z-30
             flex
             items-center
             overflow-hidden
+            opacity-0
           "
           >
             <div className="w-full">
@@ -833,6 +836,7 @@ export default function Hero() {
             </div>
           </div>
 
+          </div>
         </div>
       </section>
   );
