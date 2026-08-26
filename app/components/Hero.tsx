@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import Image from "next/image";
 
 const services = [
@@ -125,6 +125,9 @@ export default function Hero() {
   const targetFrameRef = useRef(0);
   const currentFrameRef = useRef(-1);
 
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [framesReady, setFramesReady] = useState(false);
+
   const reducedMotion = useReducedMotion();
 
   useLayoutEffect(() => {
@@ -138,6 +141,9 @@ export default function Hero() {
     framesRef.current = new Array(FRAME_COUNT).fill(null);
     targetFrameRef.current = 0;
     currentFrameRef.current = -1;
+
+    setLoadedCount(0);
+    setFramesReady(false);
 
     let cancelled = false;
     let ctx2d: CanvasRenderingContext2D | null = null;
@@ -305,23 +311,26 @@ export default function Hero() {
       redrawCurrent();
 
       const priorityEnd = Math.min(FRAME_PRIORITY_COUNT, FRAME_COUNT);
-      const priorityLoads: Promise<void>[] = [];
+      const allLoads: Promise<void>[] = [];
 
-      for (let i = 1; i < priorityEnd; i++) {
-        priorityLoads.push(loadFrame(i, "high"));
+      for (let i = 1; i < FRAME_COUNT; i++) {
+        const priority = i < priorityEnd ? "high" : "low";
+
+        allLoads.push(
+            loadFrame(i, priority).then(() => {
+              if (cancelled) return;
+              setLoadedCount((count) => count + 1);
+            }),
+        );
       }
 
-      await Promise.all(priorityLoads);
+      if (!cancelled) setLoadedCount((count) => count + 1);
+
+      await Promise.all(allLoads);
       if (cancelled) return;
 
-      logFrameEvent("frames prioritários prontos", priorityEnd);
-
-      for (let i = priorityEnd; i < FRAME_COUNT; i++) {
-        if (cancelled) return;
-        await loadFrame(i, "low");
-      }
-
-      if (!cancelled) logFrameEvent("todos os frames carregados");
+      setFramesReady(true);
+      logFrameEvent("todos os frames carregados");
     };
 
     computeDrawParams();
@@ -621,6 +630,32 @@ export default function Hero() {
           />
 
           <div className="pointer-events-none absolute inset-0 z-[5] bg-black/25" />
+
+          <div
+              aria-hidden="true"
+              className={`
+              pointer-events-none
+              absolute
+              inset-0
+              z-50
+              flex
+              flex-col
+              items-center
+              justify-center
+              gap-4
+              bg-black
+              transition-opacity
+              duration-700
+              ease-out
+              ${framesReady ? "opacity-0" : "opacity-100"}
+            `}
+          >
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+
+            <p className="font-mono text-xs tracking-[0.3em] text-white/60">
+              {Math.round((loadedCount / FRAME_COUNT) * 100)}%
+            </p>
+          </div>
 
           <div
               id="lumitiria-hero-copy"
